@@ -28,7 +28,10 @@ unsigned long lastFetchTime = 0;
 unsigned long lastSwitchTime = 0;
 const unsigned long FETCH_INTERVAL = 9000;  // 9 seconds
 const unsigned long SWITCH_INTERVAL = 5000; // 5 seconds
+const unsigned long JSON_CHECK_INTERVAL = 60000; // 1 minute
 
+unsigned long lastJsonCheckTime = 0;
+String lastJsonContent = "";
 bool needsDisplay = true;
 
 void setup() {
@@ -56,9 +59,6 @@ void setup() {
 }
 
 void fetchCoinList() {
-    lcd.clear();
-    lcd.print("Fetching coins...");
-    
     HTTPClient http;
     http.begin(coinsJsonUrl);
     int httpCode = http.GET();
@@ -68,7 +68,24 @@ void fetchCoinList() {
 
     if (httpCode > 0) {
         String payload = http.getString();
+        
+        // Skip update if content hasn't changed
+        if (payload == lastJsonContent) {
+            Serial.println("Coin list unchanged");
+            http.end();
+            return;
+        }
+        
+        // Only show LCD message if content has changed
+        lcd.clear();
+        lcd.print("Fetching coins...");
+        
+        lastJsonContent = payload;
         Serial.println("Payload: " + payload);
+        
+        // Clear existing data
+        coinList.clear();
+        coinData.clear();
         
         DynamicJsonDocument doc(2048);
         DeserializationError error = deserializeJson(doc, payload);
@@ -191,6 +208,13 @@ void updateDisplay() {
 
 void loop() {
     unsigned long currentTime = millis();
+
+    // Check for JSON updates
+    if (currentTime - lastJsonCheckTime >= JSON_CHECK_INTERVAL) {
+        Serial.println("Checking for coin list updates...");
+        fetchCoinList();
+        lastJsonCheckTime = currentTime;
+    }
 
     // Add check for empty coin list
     if (coinList.empty()) {
